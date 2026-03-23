@@ -1,3 +1,4 @@
+import jwt from 'jsonwebtoken'
 import User from '../models/User.js'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -13,9 +14,7 @@ function sortDataByQuantityPrice(data) {
     return data
 }
 
-
 function powerIndex(balance) {
-
     const tierList = {
         1_000: 125,
         10_000: 250,
@@ -37,7 +36,6 @@ function powerIndex(balance) {
     return count - 1
 }
 
-
 function calculateChangeAndPercentage(value1y, today) {
     let returnable = { change: 'New Account', percentage: 'New Account' }
 
@@ -45,7 +43,6 @@ function calculateChangeAndPercentage(value1y, today) {
         return returnable
     }
     let lastYear = value1y.slice(-13)[0]?.value
-
 
     if (lastYear) {
         if (today > lastYear) {
@@ -65,35 +62,68 @@ function calculateChangeAndPercentage(value1y, today) {
         }
     }
     return returnable
-
 }
 
+// Helper to extract requester id from Authorization header (if present)
+function getRequesterIdFromHeader(req) {
+    try {
+        let token = req.header('Authorization') || '';
+        if (!token) return null;
+        if (token.startsWith('Bearer ')) token = token.slice(7).trim();
+        const verified = jwt.verify(token, process.env.JWT_SECRET);
+        return verified?.id || verified?._id || null;
+    } catch (err) {
+        return null;
+    }
+}
 
 export const getUser = async (req, res) => {
     try {
         const { id } = req.params;
         const user = await User.findById(id)
         if (!user) {
-            res.status(404).json({ message: 'User not found!' })
-        } else {
-            res.status(200).json(user)
+            return res.status(404).json({ message: 'User not found!' })
         }
+
+        const requesterId = getRequesterIdFromHeader(req)
+        const isOwner = requesterId && requesterId.toString() === user._id.toString()
+
+        if (user.isPrivate && !isOwner) {
+            const publicProfile = {
+                _id: user._id,
+                firstName: user.firstName,
+                lastName: user.lastName,
+                picturePath: user.picturePath,
+                createdAt: user.createdAt
+            }
+            return res.status(200).json(publicProfile)
+        }
+
+        return res.status(200).json(user)
     } catch (error) {
-        res.status(404).json({ message: error.message })
+        return res.status(404).json({ message: error.message })
     }
 }
+
 export const getUserPortfolio = async (req, res) => {
     try {
         const { id } = req.params;
         const user = await User.findById(id)
         if (!user) {
-            res.status(404).json({ message: 'User not found!' })
+            return res.status(404).json({ message: 'User not found!' })
         }
-        const assets = user.portfolio
-        res.status(200).json(assets)
-    } catch (error) {
-        res.status(500).json({ message: error })
 
+        const requesterId = getRequesterIdFromHeader(req)
+        const isOwner = requesterId && requesterId.toString() === user._id.toString()
+
+        if (user.isPrivate && !isOwner) {
+            return res.status(403).json({ message: 'This account is private' })
+        }
+
+        const assets = user.portfolio
+        return res.status(200).json(assets)
+    } catch (error) {
+        return res.status(500).json({ message: error })
     }
 }
 
@@ -102,11 +132,17 @@ export const getUserChartData = async (req, res) => {
         const { id } = req.params;
         const user = await User.findById(id);
         if (!user) {
-            res.status(404).json({ message: "User not found!" });
+            return res.status(404).json({ message: "User not found!" });
+        }
+
+        const requesterId = getRequesterIdFromHeader(req)
+        const isOwner = requesterId && requesterId.toString() === user._id.toString()
+
+        if (user.isPrivate && !isOwner) {
+            return res.status(403).json({ message: 'This account is private' })
         }
 
         const portfolio = user.portfolio
-        //LineChart
         let chartData = []
         let sum = 0
         for (let report of portfolio) {
@@ -132,7 +168,6 @@ export const getUserChartData = async (req, res) => {
             refactored.push({ name: toMMYY(row.name), value: row.value })
         }
 
-        //Stacked Area Chart
         const stackedAreaChart = []
         let assets, obj;
         for (let report of portfolio) {
@@ -144,9 +179,7 @@ export const getUserChartData = async (req, res) => {
             stackedAreaChart.push(obj)
         }
 
-
-        //Pie Chart
-        let lastReport = portfolio.pop().assets
+        let lastReport = portfolio.slice(-1)[0]?.assets || []
         sum = 0
         const pieData = []
         for (let asset of lastReport) {
@@ -157,28 +190,25 @@ export const getUserChartData = async (req, res) => {
         }
         pieData.sort((a, b) => b.value - a.value)
 
-        //All Assets
         const allAssets = [];
         lastReport = sortDataByQuantityPrice(lastReport)
         for (let asset of lastReport) {
             allAssets.push(asset.name)
         }
 
-
-        res.status(200).json({ user: user, areaChart: refactored, pieChart: pieData, portfolio: user.portfolio, stackedAreaChart, allAssets })
+        return res.status(200).json({ user: user, areaChart: refactored, pieChart: pieData, portfolio: user.portfolio, stackedAreaChart, allAssets })
     } catch (error) {
-        res.status(500).json({ message: error.message })
+        return res.status(500).json({ message: error.message })
     }
 }
 
 export const postUserPortfolioReport = async (req, res) => {
     try {
         const { report } = req.body
-        console.log(req.body)
         const { id } = req.params
         const user = await User.findById(id)
         if (!user) {
-            res.status(404).json({ message: "User not found!" })
+            return res.status(404).json({ message: "User not found!" })
         }
         let portfolio = [...user.portfolio]
         let lastReportDate = new Date(portfolio.pop().time)
@@ -189,19 +219,23 @@ export const postUserPortfolioReport = async (req, res) => {
 
         user.markModified('portfolio')
         await user.save()
-        res.status(200).json({ user })
+        return res.status(200).json({ user })
     } catch (error) {
-        res.status(500).json({ message: error.message })
+        return res.status(500).json({ message: error.message })
     }
 }
-
 
 export const getUserStats = async (req, res) => {
     try {
         const info = []
+        const requesterId = getRequesterIdFromHeader(req)
         const users = await User.find({})
 
         for (let user of users) {
+            if (user.isPrivate && (!requesterId || requesterId.toString() !== user._id.toString())) {
+                continue
+            }
+
             let data = []
             let sum = 0
 
@@ -223,6 +257,8 @@ export const getUserStats = async (req, res) => {
                 sum = 0
             }
 
+            if (data.length === 0) continue;
+
             let val = data[data.length - 1].value
 
             info.push(
@@ -239,8 +275,8 @@ export const getUserStats = async (req, res) => {
             )
         }
         info.sort((a, b) => a.value > b.value ? -1 : 1)
-        res.status(200).json(info)
+        return res.status(200).json(info)
     } catch (error) {
-        res.status(500).json({ message: error.message })
+        return res.status(500).json({ message: error.message })
     }
 }
