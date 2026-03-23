@@ -31,6 +31,10 @@ const UserSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    isPrivate: {
+        type: Boolean,
+        default: false
+    },
     portfolio: {
         type: Array,
         default: [
