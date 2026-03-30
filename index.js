@@ -9,6 +9,7 @@ import path, { dirname } from 'path'
 import { fileURLToPath } from 'url'
 import authRoutes from './routes/auth.js'
 import userRoutes from './routes/user.js'
+import tagRoutes from './routes/tag.js'
 import { register, editInformation } from './controllers/auth.js'
 import uploader from './utils/cloudinaryConfig.js'
 
@@ -36,6 +37,8 @@ app.post('/user/:id/edit',
 app.use("/auth", authRoutes)
 
 app.use("/user", userRoutes)
+
+app.use("/tags", tagRoutes)
 
 app.get("/", (req, res) => {
     res.send("This was a perfect experience, all is working")
