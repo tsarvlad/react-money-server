@@ -44,6 +44,20 @@ app.get("/", (req, res) => {
     res.send("This was a perfect experience, all is working")
 })
 
+app.get(["/ping-db", "/api/ping-db"], async (req, res) => {
+    try {
+        if (mongoose.connection.readyState === 1) {
+            await mongoose.connection.db.admin().ping();
+            res.status(200).send("Database pinged successfully.");
+        } else {
+            res.status(503).send(`Database connection is not ready. Current state: ${mongoose.connection.readyState}`);
+        }
+    } catch (error) {
+        console.error("Database ping failed:", error);
+        res.status(500).send(`Database ping failed: ${error.message}`);
+    }
+});
+
 
 const PORT = process.env.PORT || 6001;
 mongoose.set('strictQuery', false);
@@ -53,6 +67,21 @@ mongoose.connect(process.env.MONGO_URL, {
     useUnifiedTopology: true
 }).then(() => {
     app.listen(PORT, () => console.log(`Server Port: ${PORT}`))
+
+    // Ping database every 24 hours to keep MongoDB Atlas active (for persistent hosting environments)
+    setInterval(async () => {
+        try {
+            console.log("Running scheduled database ping to keep cluster active...");
+            if (mongoose.connection.readyState === 1) {
+                await mongoose.connection.db.admin().ping();
+                console.log("Database ping successful.");
+            } else {
+                console.log("Database connection not ready for ping.");
+            }
+        } catch (error) {
+            console.error("Scheduled database ping failed:", error);
+        }
+    }, 24 * 60 * 60 * 1000); // 24 hours
 }).catch((error) => console.log(`${error}, did not connect`))
 
 export default app
